@@ -1,0 +1,123 @@
+# import libraries
+import pandas as pd
+
+from sklearn.preprocessing import MinMaxScaler
+from sklearn.model_selection import train_test_split, GridSearchCV
+from sklearn.metrics import accuracy_score
+from sklearn.neighbors import KNeighborsClassifier
+
+import seaborn as sns
+import matplotlib.pyplot as plt
+
+#load dataset
+df = pd.read_csv("heart_disease_prediction.csv")
+df.head()
+print(df.dtypes)
+df.dtypes.value_counts()
+df.describe()
+df.isna().sum()
+df.describe(include=['object'])
+df["FastingBS"].unique(), df["HeartDisease"].unique() 
+categorical_cols = ["Sex", "ChestPainType", "FastingBS", "RestingECG", "ExerciseAngina", "ST_Slope", "HeartDisease"]
+
+fig = plt.figure(figsize=(16,15))
+
+for idx, col in enumerate(categorical_cols):
+    ax = plt.subplot(4, 2, idx+1)
+    sns.countplot(x=df[col], ax=ax)
+    # add data labels to each bar
+    for container in ax.containers:
+        ax.bar_label(container, label_type="center")
+
+fig = plt.figure(figsize=(16,15))
+
+for idx, col in enumerate(categorical_cols[:-1]):
+    ax = plt.subplot(4, 2, idx+1)
+    # group by HeartDisease
+    sns.countplot(x=df[col], hue=df["HeartDisease"], ax=ax)
+    # add data labels to each bar
+    for container in ax.containers:
+        ax.bar_label(container, label_type="center")
+
+df[df["RestingBP"] == 0]
+df[df["Cholesterol"] == 0]
+df_clean = df.copy()
+
+# only keep non-zero values for RestingBP
+df_clean = df_clean[df_clean["RestingBP"] != 0]
+
+heartdisease_mask = df_clean["HeartDisease"]==0
+
+cholesterol_without_heartdisease = df_clean.loc[heartdisease_mask, "Cholesterol"]
+cholesterol_with_heartdisease = df_clean.loc[~heartdisease_mask, "Cholesterol"]
+
+df_clean.loc[heartdisease_mask, "Cholesterol"] = cholesterol_without_heartdisease.replace(to_replace = 0, value = cholesterol_without_heartdisease.median())
+df_clean.loc[~heartdisease_mask, "Cholesterol"] = cholesterol_with_heartdisease.replace(to_replace = 0, value = cholesterol_with_heartdisease.median())
+df_clean[["Cholesterol", "RestingBP"]].describe()
+df_clean = pd.get_dummies(df_clean, drop_first=True)
+df_clean.head()
+correlations = abs(df_clean.corr())
+plt.figure(figsize=(12,8))
+sns.heatmap(correlations, annot=True, cmap="Blues")
+plt.figure(figsize=(12,8))
+sns.heatmap(correlations[correlations > 0.3], annot=True, cmap="Blues")
+X = df_clean.drop(["HeartDisease"], axis=1)
+y = df_clean["HeartDisease"]
+
+X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.15, random_state = 417)
+
+features = [
+    "Oldpeak",
+    "Sex_M",
+    "ExerciseAngina_Y",
+    "ST_Slope_Flat",
+    "ST_Slope_Up"
+]
+for feature in features:
+    knn = KNeighborsClassifier(n_neighbors = 3)
+    knn.fit(X_train[[feature]], y_train)
+    accuracy = knn.score(X_val[[feature]], y_val)
+    print(f"The k-NN classifier trained on {feature} and with k = 3 has an accuracy of {accuracy*100:.2f}%")
+
+scaler = MinMaxScaler()
+X_train_scaled = scaler.fit_transform(X_train[features])
+X_val_scaled = scaler.transform(X_val[features])
+knn = KNeighborsClassifier(n_neighbors = 3)
+knn.fit(X_train_scaled, y_train)
+accuracy = knn.score(X_val_scaled, y_val)
+print(f"Accuracy: {accuracy*100:.2f}")
+X = df_clean.drop(["HeartDisease"], axis=1)
+y = df_clean["HeartDisease"]
+
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.15, random_state = 417)
+
+features = [
+    "Oldpeak",
+    "Sex_M",
+    "ExerciseAngina_Y",
+    "ST_Slope_Flat",
+    "ST_Slope_Up"
+]
+
+scaler = MinMaxScaler()
+X_train_scaled = scaler.fit_transform(X_train[features])
+grid_params = {"n_neighbors": range(1, 20),
+                "metric": ["minkowski", "manhattan"]
+              }
+
+knn = KNeighborsClassifier()
+knn_grid = GridSearchCV(knn, grid_params, scoring='accuracy')
+knn_grid.fit(X_train_scaled, y_train)
+knn_grid.best_score_*100, knn_grid.best_params_
+X_test_scaled = scaler.transform(X_test[features])
+predictions = knn_grid.best_estimator_.predict(X_test_scaled)
+accuracy = accuracy_score(y_test, predictions)
+print(f" Model Accuracy on test set: {accuracy*100:.2f}")
+print("Distribution of patients by their sex in the entire dataset")
+print(X.Sex_M.value_counts())
+
+print("\nDistribution of patients by their sex in the training dataset")
+print(X_train.Sex_M.value_counts())
+
+print("\nDistribution of patients by their sex in the test dataset")
+print(X_test.Sex_M.value_counts())
